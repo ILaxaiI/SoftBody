@@ -1,14 +1,16 @@
 local softbody = {}
 softbody.__index = softbody
 
-function softbody:new(x,y,dist,cx,cy,joints,stiffness,damping)
+function softbody:new(x,y,dist,cx,cy,stiffness,damping,joints,useJoints)
         local body = setmetatable({
             x = x,
             y = y,
             damping = damping,
             stiffness = stiffness,
             jc = joints,
-            points = {}
+            points = {},
+            mode = useJoints,
+
         },softbody)
 
     self.dist = dist
@@ -55,10 +57,10 @@ function softbody:setUpJoints()
             end
         end
     end
+   --print(#self.joints)
    
    
 end
-
 
 
 
@@ -177,6 +179,51 @@ local function cb(fix)
  return true
 end
 
+
+function softbody:selfCollision(dt)
+  for px = 1,self.pointCountX do
+    for py = 1,self.pointCountY do
+      
+      local p1 = self.points[px][py]          
+        
+        for px2 = px,self.pointCountX do
+          for py2 = py,self.pointCountY do
+            if px ~= px2 or py ~= py2 then
+            local p2 = self.points[px2][py2]
+      
+            local edx = self.dist*(px2-px)
+            local edy = self.dist*(py2-py)
+            
+            local expDist = math.sqrt(edx*edx+edy*edy)
+        
+            local dx,dy = p2[1]-p1[1],p2[2]-p1[2]
+            local n = math.sqrt(dx*dx+dy*dy)
+            dx = dx/n
+            dy = dy/n
+        
+            if n > 0.1 then
+            
+            local force = self.stiffness*(expDist - n)
+            
+            local dvx = p2.vx-p1.vx
+            local dvy = p2.vy-p1.vy 
+            
+            local damp = self.damping*dotProduct(dx,dy,dvx,dvy)
+              force = (force - damp)/n
+              p1.fx = p1.fx - force*dx*dt
+              p1.fy = p1.fy - force*dy*dt
+            
+              p2.fx = p2.fx + force*dx*dt
+              p2.fy = p2.fy + force*dy*dt
+            end
+            end
+          end
+        end
+      end
+  end
+end
+
+
 function softbody:testCollision(dt)
     currentBody = self
     for x = 1,self.pointCountX do
@@ -202,19 +249,18 @@ function softbody:calcJoints(dt)
         dy = dy/n
         
         if n > 0 then
-            local force = self.stiffness*(jt.dist - n)/(jt.dist*self.jc)
+            local force = self.stiffness*(jt.dist - n)
             local dvx = p1.vx-p2.vx
             local dvy = p1.vy-p2.vy 
 
-            local damp = self.damping*dotProduct(dx,dy,dvx,dvy)/(jt.dist*self.jc)
+            local damp = self.damping*dotProduct(dx,dy,dvx,dvy)
 
-            force = (force + damp)
-            p1.fx = p1.fx - force*dx
-            p1.fy = p1.fy - force*dy
+            force = (force + damp)/jt.dist
+            p1.fx = p1.fx - force*dx*dt
+            p1.fy = p1.fy - force*dy*dt
 
-
-            p2.fx = p2.fx + force*dx
-            p2.fy = p2.fy + force*dy
+            p2.fx = p2.fx + force*dx*dt
+            p2.fy = p2.fy + force*dy*dt
         end
     end
     
@@ -277,8 +323,8 @@ end
 function softbody:move(dt)
     for px = 1,self.pointCountX do
         for py = 1,self.pointCountY do
-            self.points[px][py].vx = math.min(70,math.max(-70,self.points[px][py].vx))
-            self.points[px][py].vy = math.min(70,math.max(-70,self.points[px][py].vy))
+  --          self.points[px][py].vx = math.min(70,math.max(-70,self.points[px][py].vx))
+--            self.points[px][py].vy = math.min(70,math.max(-70,self.points[px][py].vy))
             
             self.points[px][py][1] = self.points[px][py][1]+self.points[px][py].vx*dt
             self.points[px][py][2] = self.points[px][py][2]+self.points[px][py].vy*dt
@@ -301,9 +347,13 @@ function softbody:drawOutline()
 end
 
 function softbody:update(dt)
-    self:calcJoints(dt)
+    if not self.mode then
+      self:selfCollision(dt)
+    else
+      self:calcJoints(dt)
+    end
     self:applyForce(dt)
-self:move(dt)
+    self:move(dt)
     self:testCollision(dt)
     
     
